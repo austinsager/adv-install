@@ -1,22 +1,27 @@
-# adv-install - Bypass Google Android Developer Verification (Non-Root)
+# adv-install
 
-Install locally stored APKs from unverified or unregistered developers without root, a USB-connected computer, Android Developer Verification enrollment, or the consumer advanced-flow process.
+`adv-install` is a non-root Termux + Shizuku shell workflow for installing locally stored APK files. It runs Android Package Manager through `rish` as `uid=2000(shell)`, stages files under `/data/local/tmp`, validates staged byte counts, installs, and cleans up temporary files.
 
-`adv-install` is a Bash-based Android package installer for Termux. It uses Shizuku and `rish` to run Android Package Manager through the Android shell identity, stages APK files under `/data/local/tmp`, verifies the staged byte count, installs the package, and removes the temporary files.
+## Quick start
 
-After the initial setup, a locally stored APK can be installed with one command:
+1. Install Termux and Shizuku on your Android device.
+2. In Shizuku, start wireless debugging and export `rish` + `rish_shizuku.dex`.
+3. In Termux, run the setup steps in [First-time installation](#first-time-installation).
+4. Install `adv-install` using the script block in [8. Install adv-install](#8-install-adv-install).
+5. Install a local APK:
 
 ```bash
 adv-install "/storage/emulated/0/Download/application.apk"
 ```
 
 > [!IMPORTANT]
-> Google expressly documents a Developer Verification exception for installations performed through Android Debug Bridge (ADB). Google does not specifically name Shizuku, `rish`, Termux, or `adv-install`. This project is designed to use the same Android shell identity used by ADB, but future Android or manufacturer changes could classify the operation differently.
+> Google documents a Developer Verification exception for Android Debug Bridge (ADB) installs. Google does not explicitly name Shizuku, `rish`, Termux, or `adv-install`. This project is designed to use the same Android shell identity as ADB, but future Android or manufacturer changes could classify this workflow differently.
 
 ---
 
 ## Table of contents
 
+- [Quick start](#quick-start)
 - [Primary purpose](#primary-purpose)
 - [Developer Verification scope](#developer-verification-scope)
 - [What adv-install is designed to avoid](#what-adv-install-is-designed-to-avoid)
@@ -63,19 +68,15 @@ adv-install "/storage/emulated/0/Download/application.apk"
 
 ## Primary purpose
 
-Android Developer Verification links Android application packages to verified developers.
+`adv-install` is a shell-oriented installer for locally stored APK files on non-rooted Android devices.
 
-Google's Android documentation states that developers may continue installing applications without Developer Verification through ADB. That exception exists so development and testing can continue for applications that are not intended or not yet ready for broad consumer distribution.
-
-`adv-install` is intended to make that shell-based installation route convenient on a non-rooted Android device.
-
-The project combines:
+It combines:
 * **Termux** for the local command-line environment
 * **Shizuku** for access to Android's shell service
-* **`rish`** for forwarding commands from Termux to the Shizuku-backed shell
+* **`rish`** for forwarding commands from Termux to Shizuku-backed shell execution
 * **Android Package Manager** for the final installation
 
-The project's main use cases include:
+Common use cases include:
 * Installing private development builds
 * Installing open-source applications outside a participating application store
 * Installing archived or discontinued applications
@@ -90,54 +91,31 @@ The project's main use cases include:
 
 ## Developer Verification scope
 
-Google expressly documents an exception for applications installed through Android Debug Bridge (ADB).
+Google's documentation states that ADB installs remain available without Developer Verification, primarily for development and testing workflows.
 
-Google's published documentation indicates that:
-* Applications may be installed through ADB without Developer Verification.
-* The ADB workflow remains available for development and testing.
-* A separate consumer-facing advanced flow exists for installing applications from unverified developers.
-* The advanced flow includes additional protective steps, including a waiting period and reauthentication.
+`adv-install` is built around that shell route. It verifies `rish` is running as `uid=2000(shell)` and then executes `pm` commands through that identity instead of the normal graphical Package Installer flow.
 
-`adv-install` does not use the ordinary graphical Package Installer flow. The script verifies that `rish` is operating as `uid=2000(shell)` and then executes package manager routines through that identity. UID `2000` is Android's standard shell identity used by ADB shell operations.
-
-### Necessary qualification
-
-The following points are distinct.
-
-#### Explicitly documented
-Google documents that ADB installations may proceed without Developer Verification.
-
-#### Technical design of this project
-Shizuku and `rish` are used to execute Package Manager as UID `2000(shell)`.
-
-#### Not expressly guaranteed
-Google does not specifically identify Shizuku, `rish`, Termux, or `adv-install` in the Developer Verification documentation.
-
-Accordingly, the project is accurately described as:
-> A non-root shell-based installer designed to use Android's ADB-exempt installation route for locally stored APKs from unverified or unregistered developers.
-
-The project should not be described as:
-> A universal Android security bypass that can install every APK without restriction.
+Important caveat: Google does not explicitly guarantee that Shizuku/`rish`-based workflows will always be treated exactly like direct ADB usage in future releases.
 
 ---
 
 ## What adv-install is designed to avoid
 
-When Android recognizes the operation as an exempt shell installation, the installation is intended to avoid the Developer Verification registration process and consumer advanced-flow steps.
+When Android treats the operation as an exempt shell install, this workflow is intended to avoid Developer Verification enrollment steps and the consumer advanced flow.
 
 | Requirement or process | Intended result |
 | :--- | :--- |
 | Developer identity verification | Not required for the exempt shell installation |
 | Developer Verification console enrollment | Not required for the exempt shell installation |
 | Developer Verification package registration | Not required for the exempt shell installation |
-| Consumer advanced-flow activation | Not used |
-| Advanced-flow waiting period | Not used |
-| Advanced-flow restart and reauthentication | Not used |
+| Consumer advanced flow activation | Not used |
+| Advanced flow waiting period | Not used |
+| Advanced flow restart and reauthentication | Not used |
 | Repeated graphical Package Installer interaction | Not used |
 | Root access | Not required |
 | USB-connected computer for each installation | Not required after Shizuku setup |
 
-The exact behavior remains dependent on Android, Package Manager, Google Play services, Shizuku, and device-manufacturer implementation.
+Behavior remains dependent on Android, Package Manager, Google Play services, Shizuku, and device-manufacturer implementation.
 
 ---
 
@@ -167,7 +145,7 @@ The script does not bypass:
 * Manufacturer-specific installation restrictions
 * Application integrity checks performed after installation
 * Play Integrity API checks
-* Application licensing
+* Application licensing checks
 * Server-side authentication
 * Account requirements imposed by an application
 
@@ -187,7 +165,7 @@ The file may have been obtained through:
 * A private repository
 * Another lawful distribution method
 
-`adv-install` begins after the file has been saved locally. The project is not an APK store, a downloader, or a malware scanner.
+`adv-install` begins after the file has been saved locally. The project is not an APK store, downloader, or malware scanner.
 
 ---
 
@@ -204,10 +182,10 @@ The file may have been obtained through:
 * Requested runtime-permission grants
 * Optional fresh reinstalls
 * Automatic staging under `/data/local/tmp`
-* Wrapped token size validation matching after staging
+* Staged byte-count validation
 * Automatic cleanup after success, failure, or interruption
 * Non-root operation through Shizuku
-* Defensive zip-slip directory traversal and symbolic link validation checks
+* Defensive zip-slip path and symlink checks
 
 ---
 
@@ -277,7 +255,7 @@ cat -- "$src" | rish -c "cat > $(quote_remote "$dst") && chmod 0644 $(quote_remo
 The local file size is checked using `wc -c`. The remote shell measures the written bytes inside a `__ADV_INSTALL_SIZE__` output block. The sizes are extracted and parsed via `sed` to verify transmission integrity, blocking execution if a size mismatch occurs.
 
 ### Package installation
-The structural installer arguments are generated securely out of a standard array interface to execute `pm install` or `pm install-multiple` inside the Shizuku host.
+Installer arguments are assembled through a shell array and passed to `pm install` or `pm install-multiple` inside Shizuku-hosted shell execution.
 
 ### Cleanup
 The script traps standard lifecycle exit points:
@@ -322,14 +300,13 @@ The script uses an array initialization pattern containing the elements `-r`, `-
 
 ## Requirements
 
-The following components are required:
-* Android device
-* Android 11 or newer (for wireless debugging startup outside a computer)
-* Termux
-* Shizuku
-* Shizuku's exported `rish` binary environment files
-* Android Developer options and Wireless Debugging enabled
-* Termux storage access allowed
+Before setup, confirm:
+* Android device (Android 11+ recommended for wireless debugging flow)
+* Termux installed
+* Shizuku installed and running
+* Shizuku-exported `rish` and `rish_shizuku.dex`
+* Android Developer options with Wireless debugging enabled
+* Termux storage access granted (`termux-setup-storage`)
 
 ---
 
@@ -389,13 +366,17 @@ hash -r
 
 rish -c 'id -u'
 ```
-Ensure that the output returns `2000` before continuing.
+Expected output:
+```text
+2000
+```
+If you get a different UID or an error, re-check Shizuku startup and the exported `rish` files before continuing.
 
 ### 8. Install adv-install
 > [!NOTE]
-> The `adv-install` script is intentionally duplicated in this README and in the repository file (`adv-install`) to support a beginner-friendly one-copy setup flow in Termux.
+> The `adv-install` script is intentionally duplicated in this README and in the repository file (`adv-install`) to support copy/paste onboarding in Termux.
 >
-> Maintainers: when script logic changes, update **both copies in the same commit/PR** to keep them synchronized.
+> Maintainers: if script logic changes, update **both copies in the same commit/PR** to keep them synchronized.
 
 The following block creates the complete hardened production script at `/data/data/com.termux/files/usr/bin/adv-install`. Copy and paste the entire block into Termux:
 ```bash
@@ -939,8 +920,8 @@ adv-install "/storage/emulated/0/Download/application-splits"
 | :--- | :--- |
 | `--no-grant` | Omits Package Manager's permission grant (-g) flag request |
 | `--no-downgrade` | Omits Package Manager's low-version-code downgrade (-d) flag request |
-| `--fresh` | Force-removes the chosen package target structure for the current Android profile before installation |
-| `--package PACKAGE_ID` | Explicit Android target identifier used by the --fresh loop invocation |
+| `--fresh` | Removes the current-user installation before reinstalling |
+| `--package PACKAGE_ID` | Package ID used by `--fresh` |
 | `--` | Explicit option parsing end marker |
 | `-h`, `--help` | Displays usage definition information |
 
@@ -963,12 +944,12 @@ adv-install "$APK_PATH"
 
 ## Fresh reinstall
 
-A fresh reinstall drops application assets and structural user spaces explicitly prior to staging the package build updates.
+A fresh reinstall removes the current user's installed copy before staging and installing the APK.
 ```bash
 adv-install --fresh --package com.example.app "/path/to/application.apk"
 ```
 
-The operation triggers a target deletion query before running execution loops:
+This triggers:
 ```text
 pm uninstall --user current PACKAGE_ID
 ```
@@ -977,7 +958,7 @@ pm uninstall --user current PACKAGE_ID
 
 ## Paths containing spaces
 
-Wrap absolute string parameters containing blank syntax patterns within double quotes:
+Wrap paths containing spaces in double quotes:
 ```bash
 adv-install "/storage/emulated/0/Download/My Application Target.apk"
 ```
@@ -986,7 +967,7 @@ adv-install "/storage/emulated/0/Download/My Application Target.apk"
 
 ## Expected output
 
-A structured deployment success timeline displays the absolute paths targeted during execution:
+A successful run looks like:
 ```text
 Staging:
   /storage/emulated/0/Download/application.apk
@@ -1000,13 +981,13 @@ Success
 ## Archive behavior
 
 ### Universal Preference
-The package installation automatically handles `universal.apk` or `standalone.apk` targets if discovered inside an extracted container.
+If present, `universal.apk` or `standalone.apk` is preferred for single-package install.
 
 ### Split Pipeline Order
-When sorting out split components, `base.apk`, `master.apk`, or `base-master.apk` layers are parsed to sit at the primary index of array groupings before forwarding variables over to `pm install-multiple` structures.
+For split installs, `base.apk`, `master.apk`, or `base-master.apk` is moved to the first install position when found.
 
 ### Secure Traversal Protection
-The decompression loops utilize an index verification layer (`validate_archive_paths`) to block invalid relative notations (`..`, `../`) and links (`reject_extracted_symlinks`), isolating execution against zip-slip host vulnerabilities.
+Archive handling validates entry paths (`validate_archive_paths`) and rejects extracted symlinks (`reject_extracted_symlinks`) to reduce zip-slip style risks.
 
 ---
 
@@ -1029,22 +1010,13 @@ sha256sum "/storage/emulated/0/Download/application.apk"
 
 ## Troubleshooting
 
-### `rish` is not returning Android shell identity
-Ensure the host assignment profile is locked into environmental parameters:
-```bash
-export RISH_APPLICATION_ID="com.termux"
-```
-
-Verify the response context explicitly:
-```bash
-rish -c 'id'
-```
-
-### Writable DEX error
-Modern system environments block loaded compilation frameworks if write permissions are exposed. Tighten permissions with:
-```bash
-chmod 444 "$PREFIX/bin/rish_shizuku.dex"
-```
+| Symptom | Likely cause | Fix |
+| :--- | :--- | :--- |
+| `rish` not found | Exported files were not copied to `$PREFIX/bin` | Re-run step 7 and verify both files exist in `$PREFIX/bin` |
+| `rish -c 'id -u'` is not `2000` | Shizuku is not active or not linked to Termux | Restart Shizuku, ensure wireless debugging pairing is active, then rerun step 7 |
+| `Unable to open file` under shared storage | APK was not staged in `/data/local/tmp` (usually when bypassing the script flow) | Use `adv-install` directly with the APK path so staging is performed |
+| Writable DEX error | `rish_shizuku.dex` is too permissive | `chmod 444 "$PREFIX/bin/rish_shizuku.dex"` |
+| No APKs found in archive | Archive does not contain usable `.apk` entries | Extract locally and verify APK contents before reinstalling |
 
 ---
 
@@ -1168,10 +1140,9 @@ The project depends on:
 
 ## Policy and project limitations
 
-### Shell and ADB Equivalency
-The latest information regarding Google's Android Developer Verification platform policy explicitly confirms that sideloading via ADB will continue to be supported. This policy does not, however, mention any Shizuku-based solutions.
+This project depends on current Android shell behavior and published ADB policy language.
 
-Therefore, the assumption that a Shizuku-backed UID `2000(shell)` installation will be treated identically to ADB installations is derived from technical inference rather than an explicit statement naming this specific project.
+ADB exceptions are documented; Shizuku/`rish` equivalency is an implementation assumption and may change in future Android, Google Play services, or OEM builds.
 
 ---
 
