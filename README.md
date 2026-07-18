@@ -392,6 +392,11 @@ rish -c 'id -u'
 Ensure that the output returns `2000` before continuing.
 
 ### 8. Install adv-install
+> [!NOTE]
+> The `adv-install` script is intentionally duplicated in this README and in the repository file (`/adv-install`) to support a beginner-friendly one-copy setup flow in Termux.
+>
+> Maintainers: when script logic changes, update **both copies in the same commit/PR** to keep them synchronized.
+
 The following block creates the complete hardened production script at `/data/data/com.termux/files/usr/bin/adv-install`. Copy and paste the entire block into Termux:
 ```bash
 cat > "$PREFIX/bin/adv-install" <<'SCRIPT'
