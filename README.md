@@ -1,0 +1,965 @@
+# adv-install
+
+Install locally stored APKs from unverified or unregistered developers without root, a USB-connected computer, Android Developer Verification enrollment, or the consumer advanced-flow process.
+
+`adv-install` is a Bash-based Android package installer for Termux[span_0](start_span)[span_0](end_span). It uses Shizuku and `rish` to run Android Package Manager through the Android shell identity, stages APK files under `/data/local/tmp`, verifies the staged byte count, installs the package, and removes the temporary files[span_1](start_span)[span_1](end_span).
+
+After the initial setup, a locally stored APK can be installed with one command[span_2](start_span)[span_2](end_span):
+
+```bash
+adv-install "/storage/emulated/0/Download/application.apk"
+
+
+[!IMPORTANT] Google expressly documents a Developer Verification exception for installations performed through Android Debug Bridge (ADB). Google does not specifically name Shizuku, rish, Termux, or adv-install. This project is designed to use the same Android shell identity used by ADB, but future Android or manufacturer changes could classify the operation differently.
+Table of contents
+Primary purpose
+Developer Verification scope
+What adv-install is designed to avoid
+What adv-install does not bypass
+Installation, not downloading
+Features
+Technical overview
+Why staging is required
+Default Package Manager flags
+Requirements
+First-time installation
+1. Install Termux
+2. Install Shizuku
+3. Enable Developer options
+4. Start Shizuku
+5. Export rish
+6. Prepare Termux
+7. Install and test rish
+8. Install adv-install
+9. Verify the installation
+Usage
+Supported input types
+Options
+Examples
+Fresh reinstall
+Paths containing spaces
+Expected output
+Archive behavior
+Security considerations
+Verify an APK hash
+Troubleshooting
+Updating adv-install
+Restore a backup
+Removing adv-install
+Repository setup
+Frequently asked questions
+Policy and project limitations
+Responsible use
+Official references
+License
+Disclaimer
+Primary purpose
+Android Developer Verification links Android application packages to verified developers.
+Google's Android documentation states that developers may continue installing applications without Developer Verification through ADB. That exception exists so development and testing can continue for applications that are not intended or not yet ready for broad consumer distribution.
+adv-install is intended to make that shell-based installation route convenient on a non-rooted Android device.
+The project combines:
+Termux for the local command-line environment
+Shizuku for access to Android's shell service
+rish for forwarding commands from Termux to the Shizuku-backed shell
+Android Package Manager for the final installation
+The project's main use cases include:
+Installing private development builds
+Installing open-source applications outside a participating application store
+Installing archived or discontinued applications
+Installing internal test builds
+Installing modified applications on an authorized test device
+Compatibility testing
+Security research
+Application preservation
+Personally controlled device management
+Developer Verification scope
+Google expressly documents an exception for applications installed through Android Debug Bridge (ADB).
+Google's published documentation indicates that:
+Applications may be installed through ADB without Developer Verification.
+The ADB workflow remains available for development and testing.
+A separate consumer-facing advanced flow exists for installing applications from unverified developers.
+The advanced flow includes additional protective steps, including a waiting period and reauthentication.
+adv-install does not use the ordinary graphical Package Installer flow. The script verifies that rish is operating as uid=2000(shell) and then executes package manager routines through that identity. UID 2000 is Android's standard shell identity used by ADB shell operations.
+Necessary qualification
+The following points are distinct.
+Explicitly documented
+Google documents that ADB installations may proceed without Developer Verification.
+Technical design of this project
+Shizuku and rish are used to execute Package Manager as UID 2000(shell).
+Not expressly guaranteed
+Google does not specifically identify Shizuku, rish, Termux, or adv-install in the Developer Verification documentation.
+Accordingly, the project is accurately described as:
+A non-root shell-based installer designed to use Android's ADB-exempt installation route for locally stored APKs from unverified or unregistered developers.
+The project should not be described as:
+A universal Android security bypass that can install every APK without restriction.
+What adv-install is designed to avoid
+When Android recognizes the operation as an exempt shell installation, the installation is intended to avoid the Developer Verification registration process and consumer advanced-flow steps.
+Requirement or process
+Intended result
+Developer identity verification
+Not required for the exempt shell installation
+Developer Verification console enrollment
+Not required for the exempt shell installation
+Developer Verification package registration
+Not required for the exempt shell installation
+Consumer advanced-flow activation
+Not used
+Advanced-flow waiting period
+Not used
+Advanced-flow restart and reauthentication
+Not used
+Repeated graphical Package Installer interaction
+Not used
+Root access
+Not required
+USB-connected computer for each installation
+Not required after Shizuku setup
+
+The exact behavior remains dependent on Android, Package Manager, Google Play services, Shizuku, and device-manufacturer implementation.
+What adv-install does not bypass
+adv-install changes the installation route. It does not disable Android's ordinary package-security model.
+The script does not bypass:
+APK signature validation
+APK structural validation
+Package parsing
+Package-name validation
+Update signing-certificate matching
+Version-code enforcement
+CPU architecture requirements
+Minimum SDK requirements
+Split-package dependency requirements
+Device-owner policy
+Work-profile policy
+Enterprise-management restrictions
+Android user restrictions
+SELinux enforcement
+Package Manager security checks
+Play Protect scanning or detection
+Signature-level permission restrictions
+Privileged permission restrictions
+Manufacturer-specific installation restrictions
+Application integrity checks performed after installation
+Play Integrity API checks
+Application licensing
+Server-side authentication
+Account requirements imposed by an application
+An APK that is invalid, incompatible, corrupt, incomplete, incorrectly signed, or blocked by policy can still fail.
+Installation, not downloading
+adv-install does not download APK files. The APK must already exist on the device, for example under /storage/emulated/0/Download/application.apk.
+The file may have been obtained through:
+A trusted developer website
+A source-code release page
+A local build process
+An authorized file transfer
+A private repository
+Another lawful distribution method
+adv-install begins after the file has been saved locally. The project is not an APK store, a downloader, or a malware scanner.
+Features
+adv-install supports:
+Single .apk files
+.apks, .xapk, and .zip archives containing APK files
+Directories containing split APK files
+Filenames containing spaces
+Quoted paths beginning with ~/
+Replacement installations
+Requested version downgrades
+Requested runtime-permission grants
+Optional fresh reinstalls
+Automatic staging under /data/local/tmp
+Wrapped token size validation matching after staging
+Automatic cleanup after success, failure, or interruption
+Non-root operation through Shizuku
+Defensive zip-slip directory traversal and symbolic link validation checks
+Technical overview
+For a single APK, the process is:
+APK in shared storage
+        |
+        | Termux opens the source file
+        v
+Standard-input byte stream
+        |
+        | rish receives the bytes as UID 2000(shell)
+        v
+/data/local/tmp/adv_install_.../base.apk
+        |
+        | Original and staged byte counts are compared
+        v
+pm install
+        |
+        | Android Package Manager processes the package
+        v
+Temporary files are removed
+
+
+Command parsing
+The script accepts one input path, optional installation flags, and an optional package ID when --fresh is used. It handles flags defensively using an options end-marker (--) and stops processing unknown arguments.
+Shell verification
+The script runs a structured, isolated string token test through rish:
+rish -c 'printf "__ADV_INSTALL_UID__=%s\n" "$(id -u)"' 2>&1
+
+
+The resulting stream is processed to remove standard legacy carriage returns (tr -d '\r') and evaluated against the expected value of 2000. The script terminates cleanly using a dedicated logging function if the identity validation fails.
+Literal tilde handling
+A quoted path does not receive normal shell tilde expansion. The script detects a literal ~/ prefix and manually expands it to the full local environment home variable:
+case "$INPUT" in
+  \~/*)
+    INPUT="$HOME/${INPUT#\~/}"
+    ;;
+esac
+
+
+Local temporary directory
+The script establishes explicit path resolution anchors targeting Termux prefix environments:
+TERMUX_PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
+LOCAL_TMP_BASE="${TMPDIR:-$TERMUX_PREFIX/tmp}"
+mkdir -p -- "$LOCAL_TMP_BASE"
+LOCAL_WORK="$(mktemp -d "$LOCAL_TMP_BASE/adv-install.XXXXXX")"
+
+
+Remote staging directory
+Each run creates a unique remote directory under /data/local/tmp/ whose name incorporates the active Termux process ID and a UNIX epoch timestamp.
+File streaming
+The source file bytes are read by Termux and securely written to the target path through rish using an absolute file identifier constraint:
+cat -- "$src" | rish -c "cat > $(quote_remote "$dst") && chmod 0644 $(quote_remote "$dst")"
+
+
+Byte-count verification
+The local file size is checked using wc -c. The remote shell measures the written bytes inside a __ADV_INSTALL_SIZE__ output block. The sizes are extracted and parsed via sed to verify transmission integrity, blocking execution if a size mismatch occurs.
+Package installation
+The structural installer arguments are generated securely out of a standard array interface to execute pm install or pm install-multiple inside the Shizuku host.
+Cleanup
+The script traps standard lifecycle exit points:
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+
+This ensures that the remote directories and local workspace paths are entirely deleted regardless of installation success or manual process termination.
+Why staging is required
+A direct command may appear sufficient:
+rish -c 'pm install "/storage/emulated/0/Download/application.apk"'
+
+
+On modern Android devices, that command may fail with:
+System server has no access to read file context u:object_r:fuse:s0
+Error: Unable to open file: /storage/emulated/0/Download/application.apk
+Consider using a file under /data/local/tmp/
+
+
+The failure is caused by the shared-storage location and its FUSE-backed SELinux context (u:object_r:fuse:s0), which prevents Android system services from reading the file directly. adv-install handles this by parsing the stream locally, pushing it under /data/local/tmp, and dropping tracking footprints after execution is completed.
+Default Package Manager flags
+The script uses an array initialization pattern containing the elements -r, -d, and -g by default.
+Flag
+Purpose
+-r
+Requests replacement of an existing package while retaining data when Android permits
+-d
+Requests permission to install a lower version code
+-g
+Requests grants for eligible runtime permissions declared by the package
+
+Requirements
+The following components are required:
+Android device
+Android 11 or newer (for wireless debugging startup outside a computer)
+Termux
+Shizuku
+Shizuku's exported rish binary environment files
+Android Developer options and Wireless Debugging enabled
+Termux storage access allowed
+First-time installation
+1. Install Termux
+Obtain Termux from official sources such as F-Droid or the official Termux GitHub repository.
+2. Install Shizuku
+Obtain Shizuku from the official website.
+3. Enable Developer options
+Navigate to your Android Software Information settings, tap Build number seven times, and authorize your lock-screen PIN. Once active, enable USB debugging and Wireless debugging inside Developer options.
+4. Start Shizuku
+Open Shizuku, select Start via Wireless debugging, pair the application using the pairing code provided by your Android system configuration menu, and start the local Shizuku service.
+5. Export rish
+Inside Shizuku, open Use Shizuku in terminal apps, select Export files, and save them to a directory in your shared storage (e.g., Download/Shizuku).
+6. Prepare Termux
+Open Termux and sync the core workspace packaging files:
+pkg update -y && pkg upgrade -y && pkg install -y coreutils grep sed findutils unzip file
+termux-setup-storage
+
+
+7. Install and test rish
+Execute the following automated installation block inside Termux to link your exported terminal files:
+RISH_SOURCE="$(find "$HOME/storage/downloads" -type f -name 'rish' -print -quit)"
+DEX_SOURCE="$(find "$HOME/storage/downloads" -type f -name 'rish_shizuku.dex' -print -quit)"
+
+[ -n "$RISH_SOURCE" ] || {
+  echo "ERROR: The exported rish file was not found under Downloads." >&2
+  exit 1
+}
+
+[ -n "$DEX_SOURCE" ] || {
+  echo "ERROR: The exported rish_shizuku.dex file was not found under Downloads." >&2
+  exit 1
+}
+
+mkdir -p "$PREFIX/bin"
+
+cp -f "$RISH_SOURCE" "$PREFIX/bin/rish"
+cp -f "$DEX_SOURCE" "$PREFIX/bin/rish_shizuku.dex"
+
+chmod 755 "$PREFIX/bin/rish"
+chmod 444 "$PREFIX/bin/rish_shizuku.dex"
+
+grep -qF 'export RISH_APPLICATION_ID="com.termux"' "$HOME/.bashrc" 2>/dev/null || \
+  printf '\nexport RISH_APPLICATION_ID="com.termux"\n' >> "$HOME/.bashrc"
+
+export RISH_APPLICATION_ID="com.termux"
+hash -r
+
+rish -c 'id -u'
+
+
+Ensure that the output returns 2000 before continuing.
+8. Install adv-install
+The following block creates the complete hardened production script at /data/data/com.termux/files/usr/bin/adv-install. Copy and paste the entire block into Termux:
+cat > "$PREFIX/bin/adv-install" <<'SCRIPT'
+#!/data/data/com.termux/files/usr/bin/bash
+set -euo pipefail
+
+GRANT=1
+DOWNGRADE=1
+FRESH=0
+FRESH_DONE=0
+PACKAGE_ID=""
+INPUT=""
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  adv-install [OPTIONS] INPUT
+
+Inputs:
+  application.apk
+  application.apks
+  application.xapk
+  archive.zip
+  directory containing APK splits
+
+Options:
+  --no-grant             Do not grant requested runtime permissions.
+  --no-downgrade         Do not permit a version-code downgrade.
+  --fresh                Remove the current-user installation first.
+  --package PACKAGE_ID   Package ID required by --fresh.
+  --                     End option parsing.
+  -h, --help             Show this help text.
+USAGE
+}
+
+fail() {
+  printf '%s\n' "$*" >&2
+  exit 1
+}
+
+usage_error() {
+  printf '%s\n' "$*" >&2
+  exit 2
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --no-grant)
+      GRANT=0
+      ;;
+    --no-downgrade)
+      DOWNGRADE=0
+      ;;
+    --fresh)
+      FRESH=1
+      ;;
+    --package)
+      shift
+      [ "$#" -gt 0 ] || usage_error "Missing package ID after --package."
+      PACKAGE_ID="$1"
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      [ "$#" -eq 1 ] || usage_error "Exactly one input must follow --."
+      [ -z "$INPUT" ] || usage_error "Only one input is accepted."
+      INPUT="$1"
+      shift
+      break
+      ;;
+    -*)
+      usage_error "Unknown option: $1"
+      ;;
+    *)
+      [ -z "$INPUT" ] || usage_error "Only one input is accepted."
+      INPUT="$1"
+      ;;
+  esac
+  shift
+done
+
+[ -n "$INPUT" ] || {
+  usage >&2
+  exit 2
+}
+
+if [ "$FRESH" -eq 1 ]; then
+  [ -n "$PACKAGE_ID" ] || usage_error "--fresh requires --package PACKAGE_ID."
+
+  case "$PACKAGE_ID" in
+    *[!A-Za-z0-9._]*|.*|*.|*..*|'')
+      usage_error "Invalid package ID: $PACKAGE_ID"
+      ;;
+  esac
+fi
+
+case "$INPUT" in
+  \~/*)
+    INPUT="$HOME/${INPUT#\~/}"
+    ;;
+esac
+
+INPUT="$(readlink -f -- "$INPUT" 2>/dev/null || printf '%s' "$INPUT")"
+
+[ -e "$INPUT" ] || fail "Input does not exist: $INPUT"
+[ -r "$INPUT" ] || fail "Input is not readable: $INPUT"
+
+export RISH_APPLICATION_ID="${RISH_APPLICATION_ID:-com.termux}"
+
+command -v rish >/dev/null 2>&1 || fail "rish was not found in PATH."
+
+if RISH_CHECK_OUTPUT="$(
+  rish -c 'printf "__ADV_INSTALL_UID__=%s\n" "$(id -u)"' 2>&1
+)"; then
+  RISH_CHECK_STATUS=0
+else
+  RISH_CHECK_STATUS=$?
+fi
+
+RISH_UID="$(
+  printf '%s\n' "$RISH_CHECK_OUTPUT" |
+    tr -d '\r' |
+    sed -n 's/^__ADV_INSTALL_UID__=\([0-9][0-9]*\)$/\1/p' |
+    tail -n 1
+)"
+
+if [ "$RISH_CHECK_STATUS" -ne 0 ] || [ "$RISH_UID" != "2000" ]; then
+  echo "rish is not returning Android shell identity." >&2
+  echo "Received UID: ${RISH_UID:-none}; expected 2000." >&2
+  [ -z "$RISH_CHECK_OUTPUT" ] || {
+    echo "rish output:" >&2
+    printf '%s\n' "$RISH_CHECK_OUTPUT" >&2
+  }
+  exit 1
+fi
+
+quote_remote() {
+  printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
+
+INSTALL_FLAGS=(-r)
+[ "$DOWNGRADE" -eq 1 ] && INSTALL_FLAGS+=(-d)
+[ "$GRANT" -eq 1 ] && INSTALL_FLAGS+=(-g)
+
+build_pm_command() {
+  local subcommand="$1"
+  shift
+
+  local command="pm $subcommand"
+  local argument
+
+  for argument in "${INSTALL_FLAGS[@]}" "$@"; do
+    command+=" $(quote_remote "$argument")"
+  done
+
+  printf '%s' "$command"
+}
+
+TERMUX_PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
+LOCAL_TMP_BASE="${TMPDIR:-$TERMUX_PREFIX/tmp}"
+mkdir -p -- "$LOCAL_TMP_BASE"
+LOCAL_WORK="$(mktemp -d "$LOCAL_TMP_BASE/adv-install.XXXXXX")"
+REMOTE_WORK="/data/local/tmp/adv_install_${$}_$(date +%s)"
+
+cleanup() {
+  local status="$?"
+  trap - EXIT INT TERM
+
+  rm -rf -- "$LOCAL_WORK" 2>/dev/null || true
+  rish -c "rm -rf $(quote_remote "$REMOTE_WORK")" >/dev/null 2>&1 || true
+
+  exit "$status"
+}
+
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+prepare_remote() {
+  rish -c "
+    rm -rf $(quote_remote "$REMOTE_WORK") &&
+    mkdir -p $(quote_remote "$REMOTE_WORK") &&
+    chmod 0755 $(quote_remote "$REMOTE_WORK")
+  "
+}
+
+stage_file() {
+  local src="$1"
+  local dst="$2"
+  local expected
+  local actual
+  local size_output
+  local size_status
+
+  [ -f "$src" ] || fail "APK is not a regular file: $src"
+  [ -r "$src" ] || fail "APK is not readable: $src"
+
+  echo "Staging:"
+  echo "  $src"
+  echo "  -> $dst"
+
+  if ! cat -- "$src" | rish -c "
+    cat > $(quote_remote "$dst") &&
+    chmod 0644 $(quote_remote "$dst")
+  "; then
+    fail "Failed to stage APK: $src"
+  fi
+
+  expected="$(wc -c < "$src" | tr -d '[:space:]')"
+
+  if size_output="$(
+    rish -c "
+      bytes=\$(wc -c < $(quote_remote "$dst")) || exit 1
+      printf '__ADV_INSTALL_SIZE__=%s\\n' \"\$bytes\"
+    " 2>&1
+  )"; then
+    size_status=0
+  else
+    size_status=$?
+  fi
+
+  actual="$(
+    printf '%s\n' "$size_output" |
+      tr -d '\r' |
+      sed -n 's/^__ADV_INSTALL_SIZE__=\([0-9][0-9]*\)$/\1/p' |
+      tail -n 1
+  )"
+
+  if [ "$size_status" -ne 0 ] || [ "$expected" != "$actual" ]; then
+    echo "Staging size mismatch: expected $expected, got ${actual:-unknown}." >&2
+    [ -z "$size_output" ] || printf '%s\n' "$size_output" >&2
+    exit 1
+  fi
+}
+
+fresh_uninstall_once() {
+  [ "$FRESH" -eq 1 ] || return 0
+  [ "$FRESH_DONE" -eq 0 ] || return 0
+
+  FRESH_DONE=1
+
+  local package_list_output
+  local package_list_status
+
+  if package_list_output="$(
+    rish -c "pm list packages --user current $(quote_remote "$PACKAGE_ID")" 2>&1
+  )"; then
+    package_list_status=0
+  else
+    package_list_status=$?
+  fi
+
+  if [ "$package_list_status" -ne 0 ]; then
+    [ -z "$package_list_output" ] || printf '%s\n' "$package_list_output" >&2
+    fail "Unable to determine whether $PACKAGE_ID is installed for the current user."
+  fi
+
+  if ! printf '%s\n' "$package_list_output" |
+    tr -d '\r' |
+    grep -Fxq "package:$PACKAGE_ID"; then
+    echo "Fresh install requested; $PACKAGE_ID is not installed for the current user."
+    return 0
+  fi
+
+  echo "Removing current-user installation: $PACKAGE_ID"
+  if ! rish -c "pm uninstall --user current $(quote_remote "$PACKAGE_ID")"; then
+    fail "Failed to remove current-user installation: $PACKAGE_ID"
+  fi
+}
+
+install_single() {
+  local src="$1"
+  local dst="$REMOTE_WORK/base.apk"
+  local command
+
+  prepare_remote
+  stage_file "$src" "$dst"
+  fresh_uninstall_once
+
+  command="$(build_pm_command install "$dst")"
+  echo "Installing single APK..."
+  rish -c "$command"
+}
+
+install_multiple() {
+  local -a sources=("$@")
+  local -a remote_paths=()
+  local src
+  local dst
+  local index=0
+  local command
+
+  [ "${#sources[@]}" -gt 0 ] || fail "No APK files found."
+
+  prepare_remote
+
+  for src in "${sources[@]}"; do
+    dst="$(printf '%s/%04d.apk' "$REMOTE_WORK" "$index")"
+    stage_file "$src" "$dst"
+    remote_paths+=("$dst")
+    index=$((index + 1))
+  done
+
+  fresh_uninstall_once
+  command="$(build_pm_command install-multiple "${remote_paths[@]}")"
+  echo "Installing $index APK split(s)..."
+  rish -c "$command"
+}
+
+collect_apks() {
+  local root="$1"
+  local array_name="$2"
+  local -n output_array="$array_name"
+  local unsorted_list="$LOCAL_WORK/apks.${RANDOM}.$$.unsorted"
+  local sorted_list="$LOCAL_WORK/apks.${RANDOM}.$$.sorted"
+
+  if ! find "$root" -type f -iname '*.apk' -print0 > "$unsorted_list"; then
+    fail "Failed to search for APK files under: $root"
+  fi
+
+  if ! sort -z "$unsorted_list" > "$sorted_list"; then
+    fail "Failed to sort APK files found under: $root"
+  fi
+
+  mapfile -d '' -t output_array < "$sorted_list"
+  rm -f -- "$unsorted_list" "$sorted_list"
+}
+
+validate_archive_paths() {
+  local archive="$1"
+  local entries_file="$LOCAL_WORK/archive.entries"
+  local entry
+
+  if ! unzip -Z1 "$archive" > "$entries_file"; then
+    fail "Unable to read archive directory: $archive"
+  fi
+
+  while IFS= read -r entry || [ -n "$entry" ]; do
+    case "$entry" in
+      ''|./)
+        ;;
+      /*|[A-Za-z]:*|..|../*|*/../*|*/..|*\\*)
+        fail "Archive contains an unsafe path: $entry"
+        ;;
+    esac
+  done < "$entries_file"
+}
+
+reject_extracted_symlinks() {
+  local root="$1"
+  local symlink_list="$LOCAL_WORK/archive.symlinks"
+
+  if ! find "$root" -type l -print > "$symlink_list"; then
+    fail "Failed to inspect extracted archive contents."
+  fi
+
+  if [ -s "$symlink_list" ]; then
+    echo "Archive contains symbolic links, which are not accepted:" >&2
+    sed -n '1,10p' "$symlink_list" >&2
+    exit 1
+  fi
+}
+
+if [ -d "$INPUT" ]; then
+  declare -a directory_apks=()
+  collect_apks "$INPUT" directory_apks
+  install_multiple "${directory_apks[@]}"
+  exit 0
+fi
+
+LOWER="$(printf '%s' "$INPUT" | tr '[:upper:]' '[:lower:]')"
+
+case "$LOWER" in
+  *.apk)
+    install_single "$INPUT"
+    ;;
+
+  *.apks|*.xapk|*.zip)
+    command -v unzip >/dev/null 2>&1 || fail "Install unzip first: pkg install unzip"
+
+    mkdir -p -- "$LOCAL_WORK/extracted"
+    validate_archive_paths "$INPUT"
+
+    if ! unzip -q -o "$INPUT" -d "$LOCAL_WORK/extracted"; then
+      fail "Failed to extract archive: $INPUT"
+    fi
+
+    reject_extracted_symlinks "$LOCAL_WORK/extracted"
+
+    declare -a all_apks=()
+    collect_apks "$LOCAL_WORK/extracted" all_apks
+
+    [ "${#all_apks[@]}" -gt 0 ] || fail "No APK files were found in the archive."
+
+    declare -a universal_apks=()
+    declare -a standalone_apks=()
+    for apk in "${all_apks[@]}"; do
+      basename_lower="$(printf '%s' "${apk##*/}" | tr '[:upper:]' '[:lower:]')"
+      case "$basename_lower" in
+        universal.apk)
+          universal_apks+=("$apk")
+          ;;
+        standalone.apk)
+          standalone_apks+=("$apk")
+          ;;
+      esac
+    done
+
+    if [ "${#universal_apks[@]}" -gt 0 ]; then
+      install_single "${universal_apks[0]}"
+      exit 0
+    fi
+
+    if [ "${#standalone_apks[@]}" -gt 0 ]; then
+      install_single "${standalone_apks[0]}"
+      exit 0
+    fi
+
+    declare -a selected_apks=()
+    declare -a split_dir_apks=()
+    declare -a non_standalone_apks=()
+
+    for apk in "${all_apks[@]}"; do
+      relative="/${apk#"$LOCAL_WORK/extracted"/}"
+      relative_lower="$(printf '%s' "$relative" | tr '[:upper:]' '[:lower:]')"
+
+      case "$relative_lower" in
+        */standalone/*|*/standalones/*)
+          ;;
+        *)
+          non_standalone_apks+=("$apk")
+          ;;
+      esac
+
+      case "$relative_lower" in
+        */splits/*)
+          split_dir_apks+=("$apk")
+          ;;
+      esac
+    done
+
+    split_dir_has_base=0
+    for apk in "${split_dir_apks[@]}"; do
+      basename_lower="$(printf '%s' "${apk##*/}" | tr '[:upper:]' '[:lower:]')"
+      case "$basename_lower" in
+        base.apk|master.apk|base-master.apk)
+          split_dir_has_base=1
+          break
+          ;;
+      esac
+    done
+
+    if [ "$split_dir_has_base" -eq 1 ]; then
+      selected_apks=("${split_dir_apks[@]}")
+    elif [ "${#non_standalone_apks[@]}" -gt 0 ]; then
+      selected_apks=("${non_standalone_apks[@]}")
+    else
+      selected_apks=("${all_apks[@]}")
+    fi
+
+    base_index=-1
+    for i in "${!selected_apks[@]}"; do
+      basename_lower="$(printf '%s' "${selected_apks[$i]##*/}" | tr '[:upper:]' '[:lower:]')"
+      case "$basename_lower" in
+        base.apk|master.apk|base-master.apk)
+          base_index="$i"
+          break
+          ;;
+      esac
+    done
+
+    if [ "$base_index" -ge 0 ]; then
+      base_apk="${selected_apks[$base_index]}"
+      declare -a ordered_apks=("$base_apk")
+
+      for i in "${!selected_apks[@]}"; do
+        [ "$i" -eq "$base_index" ] || ordered_apks+=("${selected_apks[$i]}")
+      done
+
+      install_multiple "${ordered_apks[@]}"
+    else
+      install_multiple "${selected_apks[@]}"
+    fi
+    ;;
+
+  *)
+    usage_error "Unsupported input type: $INPUT"
+    ;;
+esac
+SCRIPT
+
+chmod 755 "$PREFIX/bin/adv-install"
+hash -r
+
+
+9. Verify the installation
+Run the tracking checks to verify execution:
+command -v adv-install
+bash -n "$PREFIX/bin/adv-install" && echo "Syntax check passed."
+shellcheck "$PREFIX/bin/adv-install"
+
+
+Usage
+General syntax:
+adv-install [OPTIONS] INPUT
+
+
+Supported input types
+Single APK
+adv-install "/storage/emulated/0/Download/application.apk"
+
+
+Archives (.apks, .xapk, .zip)
+adv-install "/storage/emulated/0/Download/application.zip"
+
+
+Directory containing split APK files
+adv-install "/storage/emulated/0/Download/application-splits"
+
+
+Options
+Option
+Effect
+--no-grant
+Omits Package Manager's permission grant (-g) flag request
+--no-downgrade
+Omits Package Manager's low-version-code downgrade (-d) flag request
+--fresh
+Force-removes the chosen package target structure for the current Android profile before installation
+--package PACKAGE_ID
+Explicit Android target identifier used by the --fresh loop invocation
+--
+Explicit option parsing end marker
+-h, --help
+Displays usage definition information
+
+Examples
+Complete Installation Workflow
+adv-install --no-grant "$HOME/storage/downloads/Target.apk"
+
+
+Prompt-Driven Execution
+read -r -p "Enter the full APK path: " APK_PATH
+adv-install "$APK_PATH"
+
+
+Fresh reinstall
+A fresh reinstall drops application assets and structural user spaces explicitly prior to staging the package build updates.
+adv-install --fresh --package com.example.app "/path/to/application.apk"
+
+
+The operation triggers a target deletion query before running execution loops:
+pm uninstall --user current PACKAGE_ID
+
+
+Paths containing spaces
+Wrap absolute string parameters containing blank syntax patterns within double quotes:
+adv-install "/storage/emulated/0/Download/My Application Target.apk"
+
+
+Expected output
+A structured deployment success timeline displays the absolute paths targeted during execution:
+Staging:
+  /storage/emulated/0/Download/application.apk
+  -> /data/local/tmp/adv_install_12345_1784290248/base.apk
+Installing single APK...
+Success
+
+
+Archive behavior
+Universal Preference
+The package installation automatically handles universal.apk or standalone.apk targets if discovered inside an extracted container.
+Split Pipeline Order
+When sorting out split components, base.apk, master.apk, or base-master.apk layers are parsed to sit at the primary index of array groupings before forwarding variables over to pm install-multiple structures.
+Secure Traversal Protection
+The decompression loops utilize an index verification layer (validate_archive_paths) to block invalid relative notations (.., ../) and links (reject_extracted_symlinks), isolating execution against zip-slip host vulnerabilities.
+Security considerations
+Stage software variants solely from authorized engineering foundations.
+Evaluate deployment checksum parameters via sha256sum queries.
+Ensure elevation bridges are closed when execution requirements are met.
+No external backend connections, metrics tracking, or data mutations are executed by this installer.
+Verify an APK hash
+sha256sum "/storage/emulated/0/Download/application.apk"
+
+
+Troubleshooting
+rish is not returning Android shell identity
+Ensure the host assignment profile is locked into environmental parameters:
+export RISH_APPLICATION_ID="com.termux"
+
+
+Verify the response context explicitly:
+rish -c 'id'
+
+
+Writable DEX error
+Modern system environments block loaded compilation frameworks if write permissions are exposed. Tighten permissions with:
+chmod 444 "$PREFIX/bin/rish_shizuku.dex"
+
+
+Updating adv-install
+cp -f "$PREFIX/bin/adv-install" "$PREFIX/bin/adv-install.backup"
+
+
+Rerun the execution steps detailed in 8. Install adv-install.
+Restore a backup
+cp -f "$PREFIX/bin/adv-install.backup" "$PREFIX/bin/adv-install"
+chmod 755 "$PREFIX/bin/adv-install"
+hash -r
+
+
+Removing adv-install
+rm -f "$PREFIX/bin/adv-install"
+hash -r
+
+
+Repository setup
+mkdir -p "$HOME/adv-install"
+cd "$HOME/adv-install"
+git init
+git branch -M main
+
+
+Frequently asked questions
+Does adv-install require root verification privileges?
+No, execution scales safely using standard Shizuku ADB token forwarding.
+Does it bypass package verification blocks or unsigned signing certificate configurations?
+No, the application layers must fulfill typical Android system validation bounds. If parsing exceptions are dropped by the host system, execution will fail.
+Policy and project limitations
+Evolving Landscapes
+The structural verification exception logic remains bound to the platform parameters defined across global Android project builds. Review documentation variables routinely to tracking compatibility changes.
+Responsible use
+This configuration implementation is mapped to support localized engineering tracking, device optimization, sandboxed performance metrics exploration, and software preservation models.
+Official references
+Android Developer Verification Documentation: https://developer.android.com/developer-verification
+Shizuku System Framework: https://shizuku.rikka.app/
+Termux Console Workspace: https://github.com/termux/termux-app
+License
+This architecture package block is provided without implicit warranties or strict maintenance validation profiles. Custom tracking distribution adjustments can integrate custom standard open-source framework license templates locally.
+Disclaimer
+This implementation asset infrastructure acts independently and is not verified, sponsored, or supported by Google LLC, Android Open Source Projects, Shizuku, RikkaApps, or Termux maintainers.
+
+

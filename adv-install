@@ -1,0 +1,490 @@
+#!/data/data/com.termux/files/usr/bin/bash
+set -euo pipefail
+
+GRANT=1
+DOWNGRADE=1
+FRESH=0
+FRESH_DONE=0
+PACKAGE_ID=""
+INPUT=""
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  adv-install [OPTIONS] INPUT
+
+Inputs:
+  application.apk
+  application.apks
+  application.xapk
+  archive.zip
+  directory containing APK splits
+
+Options:
+  --no-grant             Do not grant requested runtime permissions.
+  --no-downgrade         Do not permit a version-code downgrade.
+  --fresh                Remove the current-user installation first.
+  --package PACKAGE_ID   Package ID required by --fresh.
+  --                     End option parsing.
+  -h, --help             Show this help text.
+USAGE
+}
+
+fail() {
+  printf '%s\n' "$*" >&2
+  exit 1
+}
+
+usage_error() {
+  printf '%s\n' "$*" >&2
+  exit 2
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --no-grant)
+      GRANT=0
+      ;;
+    --no-downgrade)
+      DOWNGRADE=0
+      ;;
+    --fresh)
+      FRESH=1
+      ;;
+    --package)
+      shift
+      [ "$#" -gt 0 ] || usage_error "Missing package ID after --package."
+      PACKAGE_ID="$1"
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      [ "$#" -eq 1 ] || usage_error "Exactly one input must follow --."
+      [ -z "$INPUT" ] || usage_error "Only one input is accepted."
+      INPUT="$1"
+      shift
+      break
+      ;;
+    -*)
+      usage_error "Unknown option: $1"
+      ;;
+    *)
+      [ -z "$INPUT" ] || usage_error "Only one input is accepted."
+      INPUT="$1"
+      ;;
+  esac
+  shift
+done
+
+[ -n "$INPUT" ] || {
+  usage >&2
+  exit 2
+}
+
+if [ "$FRESH" -eq 1 ]; then
+  [ -n "$PACKAGE_ID" ] || usage_error "--fresh requires --package PACKAGE_ID."
+
+  case "$PACKAGE_ID" in
+    *[!A-Za-z0-9._]*|.*|*.|*..*|'')
+      usage_error "Invalid package ID: $PACKAGE_ID"
+      ;;
+  esac
+fi
+
+case "$INPUT" in
+  \~/*)
+    INPUT="$HOME/${INPUT#\~/}"
+    ;;
+esac
+
+INPUT="$(readlink -f -- "$INPUT" 2>/dev/null || printf '%s' "$INPUT")"
+
+[ -e "$INPUT" ] || fail "Input does not exist: $INPUT"
+[ -r "$INPUT" ] || fail "Input is not readable: $INPUT"
+
+export RISH_APPLICATION_ID="${RISH_APPLICATION_ID:-com.termux}"
+
+command -v rish >/dev/null 2>&1 || fail "rish was not found in PATH."
+
+if RISH_CHECK_OUTPUT="$(
+  rish -c 'printf "__ADV_INSTALL_UID__=%s\n" "$(id -u)"' 2>&1
+)"; then
+  RISH_CHECK_STATUS=0
+else
+  RISH_CHECK_STATUS=$?
+fi
+
+RISH_UID="$(
+  printf '%s\n' "$RISH_CHECK_OUTPUT" |
+    tr -d '\r' |
+    sed -n 's/^__ADV_INSTALL_UID__=\([0-9][0-9]*\)$/\1/p' |
+    tail -n 1
+)"
+
+if [ "$RISH_CHECK_STATUS" -ne 0 ] || [ "$RISH_UID" != "2000" ]; then
+  echo "rish is not returning Android shell identity." >&2
+  echo "Received UID: ${RISH_UID:-none}; expected 2000." >&2
+  [ -z "$RISH_CHECK_OUTPUT" ] || {
+    echo "rish output:" >&2
+    printf '%s\n' "$RISH_CHECK_OUTPUT" >&2
+  }
+  exit 1
+fi
+
+quote_remote() {
+  printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
+
+INSTALL_FLAGS=(-r)
+[ "$DOWNGRADE" -eq 1 ] && INSTALL_FLAGS+=(-d)
+[ "$GRANT" -eq 1 ] && INSTALL_FLAGS+=(-g)
+
+build_pm_command() {
+  local subcommand="$1"
+  shift
+
+  local command="pm $subcommand"
+  local argument
+
+  for argument in "${INSTALL_FLAGS[@]}" "$@"; do
+    command+=" $(quote_remote "$argument")"
+  done
+
+  printf '%s' "$command"
+}
+
+TERMUX_PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
+LOCAL_TMP_BASE="${TMPDIR:-$TERMUX_PREFIX/tmp}"
+mkdir -p -- "$LOCAL_TMP_BASE"
+LOCAL_WORK="$(mktemp -d "$LOCAL_TMP_BASE/adv-install.XXXXXX")"
+REMOTE_WORK="/data/local/tmp/adv_install_${$}_$(date +%s)"
+
+cleanup() {
+  local status="$?"
+  trap - EXIT INT TERM
+
+  rm -rf -- "$LOCAL_WORK" 2>/dev/null || true
+  rish -c "rm -rf $(quote_remote "$REMOTE_WORK")" >/dev/null 2>&1 || true
+
+  exit "$status"
+}
+
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+prepare_remote() {
+  rish -c "
+    rm -rf $(quote_remote "$REMOTE_WORK") &&
+    mkdir -p $(quote_remote "$REMOTE_WORK") &&
+    chmod 0755 $(quote_remote "$REMOTE_WORK")
+  "
+}
+
+stage_file() {
+  local src="$1"
+  local dst="$2"
+  local expected
+  local actual
+  local size_output
+  local size_status
+
+  [ -f "$src" ] || fail "APK is not a regular file: $src"
+  [ -r "$src" ] || fail "APK is not readable: $src"
+
+  echo "Staging:"
+  echo "  $src"
+  echo "  -> $dst"
+
+  if ! cat -- "$src" | rish -c "
+    cat > $(quote_remote "$dst") &&
+    chmod 0644 $(quote_remote "$dst")
+  "; then
+    fail "Failed to stage APK: $src"
+  fi
+
+  expected="$(wc -c < "$src" | tr -d '[:space:]')"
+
+  if size_output="$(
+    rish -c "
+      bytes=\$(wc -c < $(quote_remote "$dst")) || exit 1
+      printf '__ADV_INSTALL_SIZE__=%s\\n' \"\$bytes\"
+    " 2>&1
+  )"; then
+    size_status=0
+  else
+    size_status=$?
+  fi
+
+  actual="$(
+    printf '%s\n' "$size_output" |
+      tr -d '\r' |
+      sed -n 's/^__ADV_INSTALL_SIZE__=\([0-9][0-9]*\)$/\1/p' |
+      tail -n 1
+  )"
+
+  if [ "$size_status" -ne 0 ] || [ "$expected" != "$actual" ]; then
+    echo "Staging size mismatch: expected $expected, got${actual:-unknown}." >&2
+    [ -z "$size_output" ] || printf '%s\n' "$size_output" >&2
+    exit 1
+  fi
+}
+
+fresh_uninstall_once() {
+  [ "$FRESH" -eq 1 ] || return 0
+  [ "$FRESH_DONE" -eq 0 ] || return 0
+
+  FRESH_DONE=1
+
+  local package_list_output
+  local package_list_status
+
+  if package_list_output="$(
+    rish -c "pm list packages --user current $(quote_remote "$PACKAGE_ID")" 2>&1
+  )"; then
+    package_list_status=0
+  else
+    package_list_status=$?
+  fi
+
+  if [ "$package_list_status" -ne 0 ]; then
+    [ -z "$package_list_output" ] || printf '%s\n' "$package_list_output" >&2
+    fail "Unable to determine whether $PACKAGE_ID is installed for the current user."
+  fi
+
+  if ! printf '%s\n' "$package_list_output" |
+    tr -d '\r' |
+    grep -Fxq "package:$PACKAGE_ID"; then
+    echo "Fresh install requested; $PACKAGE_ID is not installed for the current user."
+    return 0
+  fi
+
+  echo "Removing current-user installation: $PACKAGE_ID"
+  if ! rish -c "pm uninstall --user current $(quote_remote "$PACKAGE_ID")"; then
+    fail "Failed to remove current-user installation: $PACKAGE_ID"
+  fi
+}
+
+install_single() {
+  local src="$1"
+  local dst="$REMOTE_WORK/base.apk"
+  local command
+
+  prepare_remote
+  stage_file "$src" "$dst"
+  fresh_uninstall_once
+
+  command="$(build_pm_command install "$dst")"
+  echo "Installing single APK..."
+  rish -c "$command"
+}
+
+install_multiple() {
+  local -a sources=("$@")
+  local -a remote_paths=()
+  local src
+  local dst
+  local index=0
+  local command
+
+  [ "${#sources[@]}" -gt 0 ] || fail "No APK files found."
+
+  prepare_remote
+
+  for src in "${sources[@]}"; do
+    dst="$(printf '%s/%04d.apk' "$REMOTE_WORK" "$index")"
+    stage_file "$src" "$dst"
+    remote_paths+=("$dst")
+    index=$((index + 1))
+  done
+
+  fresh_uninstall_once
+  command="$(build_pm_command install-multiple "${remote_paths[@]}")"
+  echo "Installing $index APK split(s)..."
+  rish -c "$command"
+}
+
+collect_apks() {
+  local root="$1"
+  local array_name="$2"
+  local -n output_array="$array_name"
+  local unsorted_list="$LOCAL_WORK/apks.${RANDOM}.$$.unsorted"
+  local sorted_list="$LOCAL_WORK/apks.${RANDOM}.$$.sorted"
+
+  if ! find "$root" -type f -iname '*.apk' -print0 > "$unsorted_list"; then
+    fail "Failed to search for APK files under: $root"
+  fi
+
+  if ! sort -z "$unsorted_list" > "$sorted_list"; then
+    fail "Failed to sort APK files found under: $root"
+  fi
+
+  mapfile -d '' -t output_array < "$sorted_list"
+  rm -f -- "$unsorted_list" "$sorted_list"
+}
+
+validate_archive_paths() {
+  local archive="$1"
+  local entries_file="$LOCAL_WORK/archive.entries"
+  local entry
+
+  if ! unzip -Z1 "$archive" > "$entries_file"; then
+    fail "Unable to read archive directory: $archive"
+  fi
+
+  while IFS= read -r entry || [ -n "$entry" ]; do
+    case "$entry" in
+      ''|./)
+        ;;
+      /*|[A-Za-z]:*|..|../*|*/../*|*/..|*\\*)
+        fail "Archive contains an unsafe path: $entry"
+        ;;
+    esac
+  done < "$entries_file"
+}
+
+reject_extracted_symlinks() {
+  local root="$1"
+  local symlink_list="$LOCAL_WORK/archive.symlinks"
+
+  if ! find "$root" -type l -print > "$symlink_list"; then
+    fail "Failed to inspect extracted archive contents."
+  fi
+
+  if [ -s "$symlink_list" ]; then
+    echo "Archive contains symbolic links, which are not accepted:" >&2
+    sed -n '1,10p' "$symlink_list" >&2
+    exit 1
+  fi
+}
+
+if [ -d "$INPUT" ]; then
+  declare -a directory_apks=()
+  collect_apks "$INPUT" directory_apks
+  install_multiple "${directory_apks[@]}"
+  exit 0
+fi
+
+LOWER="$(printf '%s' "$INPUT" | tr '[:upper:]' '[:lower:]')"
+
+case "$LOWER" in
+  *.apk)
+    install_single "$INPUT"
+    ;;
+
+  *.apks|*.xapk|*.zip)
+    command -v unzip >/dev/null 2>&1 || fail "Install unzip first: pkg install unzip"
+
+    mkdir -p -- "$LOCAL_WORK/extracted"
+    validate_archive_paths "$INPUT"
+
+    if ! unzip -q -o "$INPUT" -d "$LOCAL_WORK/extracted"; then
+      fail "Failed to extract archive: $INPUT"
+    fi
+
+    reject_extracted_symlinks "$LOCAL_WORK/extracted"
+
+    declare -a all_apks=()
+    collect_apks "$LOCAL_WORK/extracted" all_apks
+
+    [ "${#all_apks[@]}" -gt 0 ] || fail "No APK files were found in the archive."
+
+    declare -a universal_apks=()
+    declare -a standalone_apks=()
+    for apk in "${all_apks[@]}"; do
+      basename_lower="$(printf '%s' "${apk##*/}" | tr '[:upper:]' '[:lower:]')"
+      case "$basename_lower" in
+        universal.apk)
+          universal_apks+=("$apk")
+          ;;
+        standalone.apk)
+          standalone_apks+=("$apk")
+          ;;
+      esac
+    done
+
+    if [ "${#universal_apks[@]}" -gt 0 ]; then
+      install_single "${universal_apks[0]}"
+      exit 0
+    fi
+
+    if [ "${#standalone_apks[@]}" -gt 0 ]; then
+      install_single "${standalone_apks[0]}"
+      exit 0
+    fi
+
+    declare -a selected_apks=()
+    declare -a split_dir_apks=()
+    declare -a non_standalone_apks=()
+
+    for apk in "${all_apks[@]}"; do
+      relative="/${apk#"$LOCAL_WORK/extracted"/}"
+      relative_lower="$(printf '%s' "$relative" | tr '[:upper:]' '[:lower:]')"
+
+      case "$relative_lower" in
+        */standalone/*|*/standalones/*)
+          ;;
+        *)
+          non_standalone_apks+=("$apk")
+          ;;
+      esac
+
+      case "$relative_lower" in
+        */splits/*)
+          split_dir_apks+=("$apk")
+          ;;
+      esac
+    done
+
+    split_dir_has_base=0
+    for apk in "${split_dir_apks[@]}"; do
+      basename_lower="$(printf '%s' "${apk##*/}" | tr '[:upper:]' '[:lower:]')"
+      case "$basename_lower" in
+        base.apk|master.apk|base-master.apk)
+          split_dir_has_base=1
+          break
+          ;;
+      esac
+    done
+
+    if [ "$split_dir_has_base" -eq 1 ]; then
+      selected_apks=("${split_dir_apks[@]}")
+    elif [ "${#non_standalone_apks[@]}" -gt 0 ]; then
+      selected_apks=("${non_standalone_apks[@]}")
+    else
+      selected_apks=("${all_apks[@]}")
+    fi
+
+    base_index=-1
+    for i in "${!selected_apks[@]}"; do
+      basename_lower="$(printf '%s' "${selected_apks[$i]##*/}" | tr '[:upper:]' '[:lower:]')"
+      case "$basename_lower" in
+        base.apk|master.apk|base-master.apk)
+          base_index="$i"
+          break
+          ;;
+    esac
+    done
+
+    if [ "$base_index" -ge 0 ]; then
+      base_apk="${selected_apks[$base_index]}"
+      declare -a ordered_apks=("$base_apk")
+
+      for i in "${!selected_apks[@]}"; do
+        [ "$i" -eq "$base_index" ] || ordered_apks+=("${selected_apks[$i]}")
+      done
+
+      install_multiple "${ordered_apks[@]}"
+    else
+      install_multiple "${selected_apks[@]}"
+    fi
+    ;;
+
+  *)
+    usage_error "Unsupported input type: $INPUT"
+    ;;
+esac
+
