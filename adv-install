@@ -227,7 +227,7 @@ stage_file() {
   )"
 
   if [ "$size_status" -ne 0 ] || [ "$expected" != "$actual" ]; then
-    echo "Staging size mismatch: expected $expected, got${actual:-unknown}." >&2
+    echo "Staging size mismatch: expected $expected, got ${actual:-unknown}." >&2
     [ -z "$size_output" ] || printf '%s\n' "$size_output" >&2
     exit 1
   fi
@@ -466,7 +466,7 @@ case "$LOWER" in
           base_index="$i"
           break
           ;;
-    esac
+      esac
     done
 
     if [ "$base_index" -ge 0 ]; then
@@ -487,4 +487,3 @@ case "$LOWER" in
     usage_error "Unsupported input type: $INPUT"
     ;;
 esac
-
