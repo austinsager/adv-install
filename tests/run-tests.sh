@@ -102,14 +102,8 @@ echo "== Flag suppression verification =="
 : > "$PM_LOG"
 bash "$ROOT/adv-install" --no-grant --no-downgrade "$TMP/app target.apk" > "$TMP/no-flags.out"
 grep -q 'pm install -r ' "$PM_LOG"
-if grep -q -- ' -d ' "$PM_LOG"; then
-  echo "ERROR: downgrade flag should be suppressed with --no-downgrade." >&2
-  exit 1
-fi
-if grep -q -- ' -g ' "$PM_LOG"; then
-  echo "ERROR: grant flag should be suppressed with --no-grant." >&2
-  exit 1
-fi
+if grep -q -- ' -d ' "$PM_LOG"; then exit 1; fi
+if grep -q -- ' -g ' "$PM_LOG"; then exit 1; fi
 
 echo "== Directory split execution flow =="
 mkdir -p "$TMP/splits"
