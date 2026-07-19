@@ -2,23 +2,14 @@
 
 ## Supported versions
 
-This repository currently tracks the `main` branch.
+The `main` branch is the active development line until tagged releases are published.
 
 ## Reporting a vulnerability
 
-Please open a **private security advisory** if possible. If that is unavailable, open an issue with minimal exploit detail and request a private contact path.
+Please open a private security advisory if available, or contact the maintainer through GitHub.
 
-Include:
-- Affected file/section
-- Reproduction steps
-- Expected vs actual behavior
-- Risk impact
+Do not include malicious APK samples in public issues.
 
-## Response goals
+## Project boundaries
 
-- Initial triage acknowledgment: within 7 days
-- Fix or mitigation plan: as soon as practical based on severity
-
-## User safety notes
-
-`adv-install` is intended for authorized testing and personal device management scenarios. It does not bypass Android package signature validation, policy controls, or app/server trust checks.
+`adv-install` is not a malware scanner and does not validate APK trustworthiness. Users are responsible for obtaining APKs from trusted, lawful sources and verifying checksums when available.

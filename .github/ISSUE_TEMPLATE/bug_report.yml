@@ -1,0 +1,50 @@
+name: Bug report
+description: Report a reproducible adv-install problem
+title: "Bug: "
+labels: [bug]
+
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Describe the problem.
+    validations:
+      required: true
+
+  - type: input
+    id: android-version
+    attributes:
+      label: Android version
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: Device and manufacturer build
+    validations:
+      required: false
+
+  - type: input
+    id: shizuku-version
+    attributes:
+      label: Shizuku version
+    validations:
+      required: false
+
+  - type: textarea
+    id: command
+    attributes:
+      label: Command used
+      render: bash
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      render: text
+    validations:
+      required: true

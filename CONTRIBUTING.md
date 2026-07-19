@@ -1,34 +1,41 @@
-# Contributing to adv-install
+# Contributing
 
-Thanks for helping improve `adv-install`.
+Thanks for your interest in improving `adv-install`.
 
-## Scope
+## Project goals and scope
 
-This project is a Termux + Shizuku shell installer focused on installing locally stored APKs through Android shell context (`uid=2000`).
+Contributions should preserve the project's core purpose: providing a local, authorized APK installation route through a non-root Termux + Shizuku shell workflow operating within the Android shell context (`uid=2000`).
 
-## Before opening a PR
+## Before opening a pull request
 
-1. Keep behavior non-root.
-2. Preserve safe quoting and input validation.
-3. Keep cleanup behavior intact for success/failure/interrupt paths.
-4. Run local checks:
+1. Keep behavior strictly non-root.
+2. Preserve safe shell quoting and defensive input validation.
+3. Ensure automated cleanup mechanics remain fully intact for success, failure, and process interruption paths.
+4. Run local test validation checks:
 
 ```bash
 bash -n adv-install
+bash tests/run-tests.sh
+```
+
+If available, also run:
+
+```bash
 shellcheck adv-install
 ```
 
 ## Commit / PR guidance
 
-- Keep PRs focused and small.
-- Explain user-visible behavior changes.
-- Include test/verification steps in the PR description.
-- If changing install semantics, document it in `README.md`.
+- Keep pull requests highly focused, small, and atomic.
+- Explicitly explain any user-visible behavior modifications.
+- Include your exact testing/verification steps in the PR description.
+- If script behavior changes, update the relevant documentation under `docs/` and the README summary.
 
-## README/script sync policy
+## Safety boundaries
 
-The script is intentionally present in both:
-- `adv-install` (source file), and
-- README setup block (beginner copy/paste flow).
-
-When script logic changes, update **both copies** in the same PR.
+Do not contribute features or patches that:
+- download APK files from third-party or unverified sources;
+- conceal background installation activity;
+- disable native Android security mechanisms;
+- target hardware environments not explicitly controlled by or authorized for the operator;
+- intentionally evade enterprise, MDM, or managed-device organizational policy.

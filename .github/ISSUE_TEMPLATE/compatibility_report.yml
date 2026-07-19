@@ -1,0 +1,44 @@
+name: Compatibility report
+description: Report device or Android version compatibility
+title: "Compatibility: "
+labels: [compatibility]
+
+body:
+  - type: input
+    id: android-version
+    attributes:
+      label: Android version
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: Device model and manufacturer
+    validations:
+      required: true
+
+  - type: input
+    id: shizuku
+    attributes:
+      label: Shizuku version
+    validations:
+      required: false
+
+  - type: dropdown
+    id: result
+    attributes:
+      label: Result
+      options:
+        - Works
+        - Fails
+        - Partially works
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+    validations:
+      required: false
