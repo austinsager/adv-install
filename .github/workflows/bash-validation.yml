@@ -3,19 +3,24 @@ name: bash-validation
 on:
   push:
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   validate:
+    name: Validate Bash project
     runs-on: ubuntu-latest
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Syntax check
+      - name: Syntax check adv-install
         run: bash -n adv-install
 
-      - name: Run mocked tests
+      - name: Run portable mocked tests
         run: bash tests/run-tests.sh
 
       - name: ShellCheck
