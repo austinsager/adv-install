@@ -1,0 +1,2 @@
+# Force Unix line endings for the installation script
+adv-install text eol=lf

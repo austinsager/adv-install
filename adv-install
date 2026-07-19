@@ -111,7 +111,7 @@ export RISH_APPLICATION_ID="${RISH_APPLICATION_ID:-com.termux}"
 command -v rish >/dev/null 2>&1 || fail "rish was not found in PATH."
 
 if RISH_CHECK_OUTPUT="$(
-  rish -c 'printf "__ADV_INSTALL_UID__=%s\n" "$(id -u)"' 2>&1
+  rish -c "printf '__ADV_INSTALL_UID__=%s\n' \"\$(id -u)\"" 2>&1
 )"; then
   RISH_CHECK_STATUS=0
 else
@@ -228,7 +228,7 @@ stage_file() {
   )"
 
   if [ "$size_status" -ne 0 ] || [ "$expected" != "$actual" ]; then
-    echo "Staging size mismatch: expected $expected, got${actual:-unknown}." >&2
+    echo "Staging size mismatch: expected $expected, got ${actual:-unknown}." >&2
     [ -z "$size_output" ] || printf '%s\n' "$size_output" >&2
     exit 1
   fi
@@ -311,7 +311,6 @@ install_multiple() {
 collect_apks() {
   local root="$1"
   local array_name="$2"
-  local -n output_array="$array_name"
   local unsorted_list="$LOCAL_WORK/apks.${RANDOM}.$$.unsorted"
   local sorted_list="$LOCAL_WORK/apks.${RANDOM}.$$.sorted"
 
@@ -323,7 +322,7 @@ collect_apks() {
     fail "Failed to sort APK files found under: $root"
   fi
 
-  mapfile -d '' -t output_array < "$sorted_list"
+  mapfile -d '' -t "$array_name" < "$sorted_list"
   rm -f -- "$unsorted_list" "$sorted_list"
 }
 
@@ -467,7 +466,7 @@ case "$LOWER" in
           base_index="$i"
           break
           ;;
-    esac
+      esac
     done
 
     if [ "$base_index" -ge 0 ]; then
@@ -488,4 +487,3 @@ case "$LOWER" in
     usage_error "Unsupported input type: $INPUT"
     ;;
 esac
-
